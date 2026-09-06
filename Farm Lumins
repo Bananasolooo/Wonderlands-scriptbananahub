@@ -1,0 +1,227 @@
+local AVOID_MODELS = {
+    "ExemploModelo1",
+    "ExemploModelo2"
+}
+local AVOID_RADIUS = 15
+
+local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
+local localPlayer = Players.LocalPlayer
+local backpack = localPlayer:WaitForChild("Backpack")
+local camera = workspace.CurrentCamera
+
+local npcsFolder = workspace:FindFirstChild("_NPCS_")
+local cameraConnection = nil
+
+local function setPlayerFrozen(frozen)
+    if localPlayer.Character then
+        local humanoid = localPlayer.Character:FindFirstChild("Humanoid")
+        local root = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+        
+        if root then root.Anchored = false end
+        
+        if humanoid then
+            humanoid.WalkSpeed = frozen and 0 or 16
+            humanoid.JumpPower = frozen and 0 or 50
+            humanoid.JumpHeight = frozen and 0 or 7.2
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, not frozen)
+        end
+    end
+end
+
+local function lockCameraToTarget(targetPosition)
+    if cameraConnection then cameraConnection:Disconnect() end
+    camera.CameraType = Enum.CameraType.Scriptable
+    
+    cameraConnection = RunService.RenderStepped:Connect(function()
+        if localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local root = localPlayer.Character.HumanoidRootPart
+            local headPos = root.Position + Vector3.new(0, 1.5, 0)
+            camera.CFrame = CFrame.lookAt(headPos, targetPosition)
+        end
+    end)
+end
+
+local function unlockCamera()
+    if cameraConnection then
+        cameraConnection:Disconnect()
+        cameraConnection = nil
+    end
+    camera.CameraType = Enum.CameraType.Custom
+end
+
+local function focusTarget(targetPart)
+    if localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local root = localPlayer.Character.HumanoidRootPart
+        local targetPos = targetPart:IsA("BasePart") and targetPart.Position or targetPart:GetPivot().Position
+        
+        local standPos = targetPos + (targetPart.CFrame.LookVector * 3.5)
+        if (standPos - targetPos).Magnitude < 1 then
+            standPos = targetPos + Vector3.new(0, 1, 3.5)
+        end
+        
+        root.CFrame = CFrame.lookAt(standPos, targetPos)
+        lockCameraToTarget(targetPos)
+        task.wait(0.05)
+    end
+end
+
+local function pressE()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.02)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+local function holdKeyE(duration)
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(duration)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+
+local function interactPrompt(targetObj)
+    if fireproximityprompt then
+        local prompt = targetObj:FindFirstChildWhichIsA("ProximityPrompt", true)
+        if prompt then
+            pcall(function() fireproximityprompt(prompt) end)
+        end
+    end
+    pressE()
+end
+
+local function countLuminsInInventory()
+    local count = 0
+    for _, item in ipairs(backpack:GetChildren()) do
+        if string.find(item.Name, "Lumin") then
+            count = count + 1
+        end
+    end
+    if localPlayer.Character then
+        for _, item in ipairs(localPlayer.Character:GetChildren()) do
+            if item:IsA("Tool") and string.find(item.Name, "Lumin") then
+                count = count + 1
+            end
+        end
+    end
+    return count
+end
+
+local function isDangerous(npcItem)
+    for _, avoidName in ipairs(AVOID_MODELS) do
+        if avoidName ~= "" and avoidName ~= "ExemploModelo1" and avoidName ~= "ExemploModelo2" then
+            if npcItem:FindFirstChild(avoidName, true) then
+                return true
+            end
+        end
+    end
+    
+    local npcPart = npcItem:FindFirstChild("HumanoidRootPart") or npcItem:FindFirstChild("Head") or npcItem:FindFirstChildWhichIsA("BasePart")
+    if npcPart then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            for _, avoidName in ipairs(AVOID_MODELS) do
+                if avoidName ~= "" and avoidName ~= "ExemploModelo1" and avoidName ~= "ExemploModelo2" and obj.Name == avoidName then
+                    local objPart = obj:IsA("BasePart") and obj or obj:FindFirstChildWhichIsA("BasePart", true)
+                    if objPart then
+                        local dist = (npcPart.Position - objPart.Position).Magnitude
+                        if dist <= AVOID_RADIUS then
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+local function countLuminsInNPCs()
+    if not npcsFolder then return 0 end
+    local count = 0
+    for _, item in ipairs(npcsFolder:GetChildren()) do
+        if string.find(item.Name, "Lumin") and not isDangerous(item) then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function findExitRoom()
+    local generatedMap = workspace:FindFirstChild("GeneratedMap")
+    if generatedMap and generatedMap:FindFirstChild("ExitRoom") then
+        return generatedMap.ExitRoom
+    end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "ExitRoom" then return obj end
+    end
+    return nil
+end
+
+local function handleSellPart()
+    local exitRoom = findExitRoom()
+    if not exitRoom then return end
+
+    local scriptable = exitRoom:FindFirstChild("Scriptable") or exitRoom
+    local targetSell = scriptable:FindFirstChild("SELLPART", true) or scriptable:FindFirstChild("Sellpart", true)
+
+    if not targetSell then
+        local creatorPart = exitRoom:FindFirstChild("CreatorSellpart")
+        if not creatorPart then
+            creatorPart = Instance.new("Part")
+            creatorPart.Name = "CreatorSellpart"
+            creatorPart.Size = Vector3.new(6, 1, 6)
+            creatorPart.Anchored = true
+            creatorPart.Transparency = 0.5
+            
+            local refPart = exitRoom:FindFirstChildWhichIsA("BasePart")
+            creatorPart.CFrame = refPart and (refPart.CFrame + Vector3.new(0, 4, 0)) or CFrame.new(0, 10, 0)
+            creatorPart.Parent = exitRoom
+        end
+
+        focusTarget(creatorPart)
+        task.wait(0.5)
+        targetSell = scriptable:FindFirstChild("SELLPART", true) or scriptable:FindFirstChild("Sellpart", true)
+    end
+
+    if targetSell then
+        focusTarget(targetSell)
+        if fireproximityprompt then
+            local prompt = targetSell:FindFirstChildWhichIsA("ProximityPrompt", true)
+            if prompt then pcall(function() fireproximityprompt(prompt) end) end
+        end
+        holdKeyE(3.0)
+    end
+end
+
+-- EXECUÇÃO PRINCIPAL
+setPlayerFrozen(true)
+
+if npcsFolder then
+    for _, item in ipairs(npcsFolder:GetChildren()) do
+        if string.find(item.Name, "Lumin") and not isDangerous(item) then
+            local targetPart = item:FindFirstChild("HumanoidRootPart") or item:FindFirstChild("Head") or item:FindFirstChildWhichIsA("BasePart")
+            
+            if targetPart then
+                focusTarget(targetPart)
+                task.wait(0.05)
+                interactPrompt(item)
+                task.wait(0.1)
+
+                if countLuminsInInventory() >= 5 then
+                    handleSellPart()
+                    break
+                end
+            end
+        end
+    end
+end
+
+local currentLumins = countLuminsInInventory()
+local remainingNPCs = countLuminsInNPCs()
+
+if currentLumins > 0 and remainingNPCs == 0 then
+    handleSellPart()
+end
+
+unlockCamera()
+setPlayerFrozen(false)
