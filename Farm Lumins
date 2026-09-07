@@ -186,11 +186,15 @@ local function handleSellPart()
 
     if targetSell then
         focusTarget(targetSell)
-        if fireproximityprompt then
-            local prompt = targetSell:FindFirstChildWhichIsA("ProximityPrompt", true)
-            if prompt then pcall(function() fireproximityprompt(prompt) end) end
+        -- Repete a segurada de E até o inventário ficar totalmente zerado
+        while countLuminsInInventory() > 0 do
+            if fireproximityprompt then
+                local prompt = targetSell:FindFirstChildWhichIsA("ProximityPrompt", true)
+                if prompt then pcall(function() fireproximityprompt(prompt) end) end
+            end
+            holdKeyE(3.0)
+            task.wait(0.2)
         end
-        holdKeyE(3.0)
     end
 end
 
@@ -210,8 +214,18 @@ local function mainExecution()
                 if targetPart then
                     focusTarget(targetPart)
                     task.wait(0.05)
-                    interactPrompt(item)
-                    task.wait(0.1)
+                    
+                    -- Tenta coletar repetidamente por até 2.5s ou até o item sumir/aumentar o inventário
+                    local startTime = tick()
+                    local countBefore = countLuminsInInventory()
+                    
+                    while (tick() - startTime) < 2.5 and item:IsDescendantOf(workspace) do
+                        interactPrompt(item)
+                        if countLuminsInInventory() > countBefore then
+                            break
+                        end
+                        task.wait(0.05)
+                    end
 
                     if countLuminsInInventory() >= 5 then
                         handleSellPart()
