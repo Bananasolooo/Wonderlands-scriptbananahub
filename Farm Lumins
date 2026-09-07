@@ -11,8 +11,8 @@ local localPlayer = Players.LocalPlayer
 local backpack = localPlayer:WaitForChild("Backpack")
 local camera = workspace.CurrentCamera
 
-local npcsFolder = workspace:FindFirstChild("_NPCS_")
 local cameraConnection = nil
+local isExecuting = false
 
 local function setPlayerFrozen(frozen)
     if localPlayer.Character then
@@ -136,9 +136,10 @@ local function isDangerous(npcItem)
 end
 
 local function countLuminsInNPCs()
-    if not npcsFolder then return 0 end
+    local folder = workspace:FindFirstChild("_NPCS_")
+    if not folder then return 0 end
     local count = 0
-    for _, item in ipairs(npcsFolder:GetChildren()) do
+    for _, item in ipairs(folder:GetChildren()) do
         if string.find(item.Name, "Lumin") and not isDangerous(item) then
             count = count + 1
         end
@@ -193,35 +194,56 @@ local function handleSellPart()
     end
 end
 
--- EXECUÇÃO PRINCIPAL
-setPlayerFrozen(true)
+-- LÓGICA PRINCIPAL DO TURNO
+local function mainExecution()
+    if isExecuting then return end
+    isExecuting = true
+    
+    setPlayerFrozen(true)
 
-if npcsFolder then
-    for _, item in ipairs(npcsFolder:GetChildren()) do
-        if string.find(item.Name, "Lumin") and not isDangerous(item) then
-            local targetPart = item:FindFirstChild("HumanoidRootPart") or item:FindFirstChild("Head") or item:FindFirstChildWhichIsA("BasePart")
-            
-            if targetPart then
-                focusTarget(targetPart)
-                task.wait(0.05)
-                interactPrompt(item)
-                task.wait(0.1)
+    local folder = workspace:FindFirstChild("_NPCS_")
+    if folder then
+        for _, item in ipairs(folder:GetChildren()) do
+            if string.find(item.Name, "Lumin") and not isDangerous(item) then
+                local targetPart = item:FindFirstChild("HumanoidRootPart") or item:FindFirstChild("Head") or item:FindFirstChildWhichIsA("BasePart")
+                
+                if targetPart then
+                    focusTarget(targetPart)
+                    task.wait(0.05)
+                    interactPrompt(item)
+                    task.wait(0.1)
 
-                if countLuminsInInventory() >= 5 then
-                    handleSellPart()
-                    break
+                    if countLuminsInInventory() >= 5 then
+                        handleSellPart()
+                        break
+                    end
                 end
             end
         end
     end
+
+    local currentLumins = countLuminsInInventory()
+    local remainingNPCs = countLuminsInNPCs()
+
+    if currentLumins > 0 and remainingNPCs == 0 then
+        handleSellPart()
+    end
+
+    unlockCamera()
+    setPlayerFrozen(false)
+    
+    isExecuting = false
 end
 
-local currentLumins = countLuminsInInventory()
-local remainingNPCs = countLuminsInNPCs()
+-- REINÍCIO AUTOMÁTICO A CADA NOVO TURNO
+workspace.ChildAdded:Connect(function(child)
+    if child.Name == "_NPCS_" and not isExecuting then
+        task.wait(2)
+        mainExecution()
+    end
+end)
 
-if currentLumins > 0 and remainingNPCs == 0 then
-    handleSellPart()
+-- DISPARO INICIAL SE JÁ HOUVER UM TURNO EM ANDAMENTO
+if workspace:FindFirstChild("_NPCS_") then
+    mainExecution()
 end
-
-unlockCamera()
-setPlayerFrozen(false)
